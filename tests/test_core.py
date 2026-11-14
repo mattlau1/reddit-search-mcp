@@ -40,5 +40,5 @@ def test_thread_tree(monkeypatch):
 @pytest.mark.live
 def test_live_smoke():
     assert "r/" in core.find_subreddits("learnpy")
-    assert "[" in core.search_posts("learnpython", "line", limit=3)
-    assert "u/" in core.get_thread("abc123")
+    assert "[" in core.search_posts("learnpython", "asyncio", limit=3)
+    assert "u/" in core.get_thread("1xprhls")

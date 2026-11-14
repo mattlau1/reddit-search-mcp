@@ -7,18 +7,18 @@ from reddit_search import core, expand
 
 def test_content_words_and_stem():
     assert expand.content_words("How do I fix a crash in my laptop?") == ["fix", "crash", "laptop"]
-    assert expand.stem("wrecks") == expand.stem("wreckd") == expand.stem("wreck")
+    assert expand.stem("crashes") == expand.stem("crashed") == expand.stem("crash")
     assert expand.stem("laptops") == expand.stem("laptop")
 
 
 def test_synonym_expansion_is_capped_and_single_word():
     (c,) = expand.build_concepts("crash")
     assert 0 < len(c.syns) <= expand.MAX_SYNS_PER_WORD
-    assert "wreck" in c.syns and "fold" in c.syns
-    assert "graze" not in c.syns  # side meaning of crash, dropped by the sense-rank rule
+    assert "wreck" in c.syns and "clash" in c.syns
+    assert "collapse" not in c.syns  # loose side meaning, not a shipped synonym
     assert all(s.isalpha() for s in c.syns)
     # plural / inflected query words still find synonyms
-    assert expand.build_concepts("crashs")[0].syns
+    assert expand.build_concepts("crashes")[0].syns
 
 
 def test_matched_terms_are_deduplicated_in_order():
@@ -64,7 +64,7 @@ def test_ranking_prefers_originals_coverage_and_comment_evidence():
              "b": {"id": "b", "title": "my wreck problem", "selftext": "", "num_comments": 1}}
     base = expand.rank_posts(cs1, posts, {})
     assert base[0][2]["id"] == "a"
-    boosted = expand.rank_posts(cs1, posts, {"b": ["set the driver wreck normal to 0, the crash goes away", "fold", "seam", "furrow"]})
+    boosted = expand.rank_posts(cs1, posts, {"b": ["update the driver, the crash goes away", "ram", "clash", "clang"]})
     assert boosted[0][2]["id"] == "b"
 
 
