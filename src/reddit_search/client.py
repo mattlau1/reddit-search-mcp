@@ -139,7 +139,7 @@ class ApiClient:
         last = "unknown error"
         for attempt in range(retries + 1):
             if deadline is not None and max(self._cool_until, time.monotonic()) > deadline:
-                last = f"{last}; gave up to stay within the time budget"
+                last = f"{last}. The client stopped to stay within the time budget"
                 break
             with self._sem:
                 self._wait_turn()
@@ -177,8 +177,8 @@ class ApiClient:
             else:
                 raise RedditSearchError(f"Arctic Shift rejected the request ({last}).")
         raise RedditSearchError(
-            f"Arctic Shift unavailable ({last}). It is a free single-maintainer "
-            "service. Busy subreddits time out on keyword search: retry later, narrow with after/before, "
+            f"Arctic Shift unavailable ({last}). It is a free service with one maintainer. "
+            "Busy subreddits time out on keyword search. Retry later, narrow the search with after and before, "
             "or use a more specific query.")
 
     @staticmethod

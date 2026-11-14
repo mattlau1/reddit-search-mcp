@@ -7,7 +7,7 @@ The NLTK 'wordnet' corpus zip contains exactly this directory.
 For each single-word lemma we keep up to MAX_SYNS single-word synonyms drawn from its first MAX_SENSES
 senses (WordNet orders senses by frequency; rarer senses are skipped). A synonym is kept only if the shared
 sense is also among ITS OWN first MAX_SYN_RANK senses and the word has a tagged-sense count > 0 (it is in real
-use), which drops side meanings like lag -> jail. Synonyms are ordered by how common
+use), which drops side meanings like crash -> collapse. Synonyms are ordered by how common
 the word is overall (WordNet's tagged-sense counts), so everyday words come before Latinate rarities.
 """
 import gzip

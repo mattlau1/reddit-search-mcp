@@ -4,7 +4,7 @@ from . import core
 
 mcp = FastMCP("reddit-search", instructions=(
     "Reddit search for first-hand experience: user-reported fixes, workarounds and recommendations for "
-    "niche software, hardware and hobbies. Pass plain words; synonyms and ranking are handled for you."))
+    "niche software, hardware and hobbies. Use plain words. The server adds synonyms and ranks the results."))
 
 
 def _run(fn, *a, **k) -> str:
@@ -13,32 +13,32 @@ def _run(fn, *a, **k) -> str:
     except core.RedditSearchError as e:
         return f"ERROR: {e}"
     except Exception as e:  # never leak a traceback to the agent
-        return f"ERROR: unexpected {type(e).__name__}: {e}. Retry, or report this if it persists."
+        return f"ERROR: unexpected {type(e).__name__}: {e}. Retry. If the error persists, report it."
 
 
 @mcp.tool()
 def find_subreddits(name_or_prefix: str, limit: int = 15) -> str:
-    """Find subreddits whose NAME starts with the text (not a topic search); guess names from the topic."""
+    """Find subreddits whose NAME starts with the text. This is not a topic search. Guess names from the topic."""
     return _run(core.find_subreddits, name_or_prefix, limit)
 
 
 @mcp.tool()
 def search_posts(subreddit: str, query: str, limit: int = 25, after: str | None = None,
                  before: str | None = None, sort: str = "desc") -> str:
-    """Search post titles and text in one subreddit (required). Broadens with synonyms and ranks best first."""
+    """Search post titles and text in one subreddit (required). Adds synonyms and ranks the best match first."""
     return _run(core.search_posts, subreddit, query, limit, after, before, sort)
 
 
 @mcp.tool()
 def search_comments(subreddit: str, query: str, limit: int = 25, after: str | None = None,
                     before: str | None = None, sort: str = "desc") -> str:
-    """Search comment bodies in one subreddit (required). Broadens with synonyms; hits show the parent post id."""
+    """Search comment bodies in one subreddit (required). Adds synonyms. Each hit shows the parent post id."""
     return _run(core.search_comments, subreddit, query, limit, after, before, sort)
 
 
 @mcp.tool()
 def get_thread(post_id_or_url: str, max_comments: int = 100) -> str:
-    """Fetch a post and its comment tree by reddit URL or post id. Read this for the actual answers."""
+    """Get a post and its comment tree from a reddit URL or post id. The comments hold the answers."""
     return _run(core.get_thread, post_id_or_url, max_comments)
 
 

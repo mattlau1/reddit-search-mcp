@@ -5,9 +5,9 @@ from . import core
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="reddit-search", description="Search Reddit via Arctic Shift")
+    p = argparse.ArgumentParser(prog="reddit-search", description="Search Reddit with the Arctic Shift archive")
     sp = p.add_subparsers(dest="cmd", required=True)
-    s = sp.add_parser("subreddits", help="find subreddits by name prefix")
+    s = sp.add_parser("subreddits", help="find subreddits with a name prefix")
     s.add_argument("prefix"); s.add_argument("--limit", type=int, default=15)
     for name in ("search", "comments"):
         s = sp.add_parser(name, help="search posts" if name == "search" else "search comments")

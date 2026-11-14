@@ -52,7 +52,7 @@ def parse_post_id(s: str) -> str:
     s = re.sub(r"^t3_", "", s, flags=re.I)
     if re.fullmatch(r"[a-z0-9]{2,10}", s, re.I):
         return s.lower()
-    raise RedditSearchError(f"Cannot parse a post id from {s!r}. Give a reddit URL or the base-36 id.")
+    raise RedditSearchError(f"Cannot parse a post id from {s!r}. Use a reddit URL or the base-36 id.")
 
 
 def parse_time(s: str | None) -> str | None:
@@ -68,8 +68,8 @@ def find_subreddits(prefix: str, limit: int = 15) -> str:
         "fields": "display_name,subscribers,public_description,over18",
     })
     if not rows:
-        return (f"No subreddit names start with {prefix!r}. The API matches name prefixes only, not topics: "
-                "guess other names (software/product name, hobby, game, no spaces) and try again.")
+        return (f"No subreddit names start with {prefix!r}. The API matches name prefixes only, not topics. "
+                "Guess other names (software name, product name, hobby or game, with no spaces) and try again.")
     out = [f"{len(rows)} subreddits starting with {prefix!r} (by subscribers):"]
     for r in rows:
         nsfw = " [NSFW]" if r.get("over18") else ""
@@ -107,7 +107,7 @@ def search_posts(subreddit: str, query: str, limit: int = 25, after: str | None 
     per = max(limit, 50)
     concepts = expand.build_concepts(query) or [expand.Concept(w) for w in expand.tokens(query)[:2]]
     if not concepts:
-        raise RedditSearchError("Empty query: give at least one keyword.")
+        raise RedditSearchError("Empty query. Use at least one keyword.")
     deadline_at = time.monotonic() + CALL_DEADLINE
     common = {"subreddit": sub, "after": parse_time(after), "before": parse_time(before), "sort": sort}
     plan = expand.plan_post_queries(concepts, min(MAX_REQUESTS - 2, 6))
@@ -158,11 +158,11 @@ def search_posts(subreddit: str, query: str, limit: int = 25, after: str | None 
     ranked = expand.rank_posts(concepts, posts, by_post)[:limit]
     if not ranked:
         return (f"No posts in r/{sub} matching {query!r} (also tried synonyms). Check the subreddit name "
-                "with find_subreddits, or try the plainest nouns for the topic.")
+                "with find_subreddits, or use the plainest nouns for the topic.")
     searched = ", ".join(plan)
-    note = f" ({len(errors)} lookup(s) failed or were skipped: results may be incomplete)" if errors else ""
+    note = f" ({len(errors)} lookup(s) failed or the server skipped them: results may be incomplete)" if errors else ""
     out = [f"{len(ranked)} posts in r/{sub} for {query!r}, best match first{note}. Searched variants: {searched}"
-           + (" + comments" if comment_rows else "") + ". Scores of posts <36h old are unreliable."]
+           + (" + comments" if comment_rows else "") + ". Scores of posts less than 36 hours old are unreliable."]
     for s, matched, r in ranked:
         out.append(f"[{r['id']}] {r.get('title', '')} | {date(r.get('created_utc'))} | "
                    f"score {r.get('score')} | {r.get('num_comments')} comments | matched: {', '.join(matched) or 'comments'}\n"
@@ -180,7 +180,7 @@ def search_comments(subreddit: str, query: str, limit: int = 25, after: str | No
     per = max(limit, 50)
     concepts = expand.build_concepts(query) or [expand.Concept(w) for w in expand.tokens(query)[:2]]
     if not concepts:
-        raise RedditSearchError("Empty query: give at least one keyword.")
+        raise RedditSearchError("Empty query. Use at least one keyword.")
     common = {"subreddit": sub, "after": parse_time(after), "before": parse_time(before), "sort": sort,
               "limit": per, "fields": "id,body,link_id,score,created_utc,author"}
     jobs = []
@@ -208,7 +208,7 @@ def search_comments(subreddit: str, query: str, limit: int = 25, after: str | No
     ranked.sort(key=lambda x: (-x[0], -(x[2].get("created_utc") or 0)))
     ranked = ranked[:limit]
     if not ranked:
-        return f"No comments in r/{sub} matching {query!r} (also tried synonyms). Try other words or search_posts."
+        return f"No comments in r/{sub} matching {query!r} (also tried synonyms). Use other words, or use search_posts."
     note = f" ({len(errors)} lookup(s) failed: results may be incomplete)" if errors else ""
     out = [f"{len(ranked)} comments in r/{sub} for {query!r}, best match first{note}:"]
     for s, matched, r in ranked:
@@ -233,7 +233,7 @@ def get_thread(post: str, max_comments: int = 100, body_chars: int = 600) -> str
     posts = api_get("/posts/ids", {
         "ids": pid, "fields": "id,title,subreddit,selftext,score,num_comments,created_utc,author"})
     if not posts:
-        raise RedditSearchError(f"Post {pid} not found in the archive (very new, or never archived).")
+        raise RedditSearchError(f"Post {pid} not found in the archive. It is very new, or the archive does not have it.")
     p = posts[0]
     sub = p.get("subreddit", "_")
     out = [f"{p.get('title')}  [{pid}]",
