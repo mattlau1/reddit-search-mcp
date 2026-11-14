@@ -12,7 +12,7 @@ equivalent git credentials).
 Claude Code, one line:
 
 ```
-claude mcp add reddit-search -- uvx --from git+https://github.com/mattlau1/reddit-search reddit-search-mcp
+claude mcp add reddit-search -- uvx --from git+https://github.com/mattlau1/reddit-search-mcp reddit-search-mcp
 ```
 
 Any other MCP client (`.mcp.json` or equivalent):
@@ -22,7 +22,7 @@ Any other MCP client (`.mcp.json` or equivalent):
   "mcpServers": {
     "reddit-search": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/mattlau1/reddit-search", "reddit-search-mcp"]
+      "args": ["--from", "git+https://github.com/mattlau1/reddit-search-mcp", "reddit-search-mcp"]
     }
   }
 }
@@ -31,10 +31,10 @@ Any other MCP client (`.mcp.json` or equivalent):
 CLI without installing:
 
 ```
-uvx --from git+https://github.com/mattlau1/reddit-search reddit-search subreddits learnpy
-uvx --from git+https://github.com/mattlau1/reddit-search reddit-search search learnpython "asyncio shutdown" --limit 10 --after 2024-01-01
-uvx --from git+https://github.com/mattlau1/reddit-search reddit-search comments learnpython asyncio --limit 5
-uvx --from git+https://github.com/mattlau1/reddit-search reddit-search thread https://www.reddit.com/r/learnpython/comments/1xprhls/
+uvx --from git+https://github.com/mattlau1/reddit-search-mcp reddit-search subreddits learnpy
+uvx --from git+https://github.com/mattlau1/reddit-search-mcp reddit-search search learnpython "asyncio shutdown" --limit 10 --after 2024-01-01
+uvx --from git+https://github.com/mattlau1/reddit-search-mcp reddit-search comments learnpython asyncio --limit 5
+uvx --from git+https://github.com/mattlau1/reddit-search-mcp reddit-search thread https://www.reddit.com/r/learnpython/comments/1xprhls/
 ```
 
 Local development form: clone, then `uv run reddit-search-mcp` (register with

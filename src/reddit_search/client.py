@@ -20,7 +20,7 @@ from pathlib import Path
 import httpx
 
 BASE = "https://arctic-shift.photon-reddit.com/api"
-PROJECT_URL = "https://github.com/mattlau1/reddit-search"
+PROJECT_URL = "https://github.com/mattlau1/reddit-search-mcp"
 MAX_INFLIGHT = 2
 DEFAULT_MIN_GAP = 0.75
 RETRY_STATUS = {429, 500, 502, 503, 504}
@@ -36,7 +36,7 @@ class RedditSearchError(Exception):
 def _version() -> str:
     try:
         from importlib.metadata import version
-        return version("reddit-search")
+        return version("reddit-search-mcp")
     except Exception:
         return "dev"
 

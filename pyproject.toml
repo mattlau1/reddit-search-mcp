@@ -1,5 +1,5 @@
 [project]
-name = "reddit-search"
+name = "reddit-search-mcp"
 version = "0.2.0"
 description = "MCP server and CLI giving agents Reddit search via the free Arctic Shift API"
 readme = "README.md"

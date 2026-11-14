@@ -172,7 +172,7 @@ def test_min_gap_spaces_requests(monkeypatch):
 
 def test_user_agent_is_honest():
     ua = cl.user_agent()
-    assert ua.startswith("reddit-search/") and "github.com/mattlau1/reddit-search" in ua and "@" not in ua
+    assert ua.startswith("reddit-search/") and "github.com/mattlau1/reddit-search-mcp" in ua and "@" not in ua
 
 
 def test_deadline_stops_waiting_on_cooldown(monkeypatch):

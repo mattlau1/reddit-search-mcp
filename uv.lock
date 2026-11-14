@@ -621,7 +621,7 @@ wheels = [
 ]
 
 [[package]]
-name = "reddit-search"
+name = "reddit-search-mcp"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
