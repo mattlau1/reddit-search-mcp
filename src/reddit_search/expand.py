@@ -178,7 +178,8 @@ def score_text(concepts: list[Concept], title: str, body: str = "") -> tuple[flo
         if term:
             total += s
             n += 1
-            matched.append(term)
+            if term not in matched:
+                matched.append(term)
     if len(concepts) > 1 and n == len(concepts):
         total += 1.0  # covers every concept of the query
     return total, matched

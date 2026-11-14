@@ -14,10 +14,17 @@ def test_content_words_and_stem():
 def test_synonym_expansion_is_capped_and_single_word():
     (c,) = expand.build_concepts("crash")
     assert 0 < len(c.syns) <= expand.MAX_SYNS_PER_WORD
-    assert "line" in c.syns and "wreck" in c.syns
+    assert "wreck" in c.syns and "fold" in c.syns
+    assert "graze" not in c.syns  # side meaning of crash, dropped by the sense-rank rule
     assert all(s.isalpha() for s in c.syns)
     # plural / inflected query words still find synonyms
     assert expand.build_concepts("crashs")[0].syns
+
+
+def test_matched_terms_are_deduplicated_in_order():
+    cs = expand.build_concepts("crash crash")
+    _, matched = expand.score_text(cs, "A crash here", "")
+    assert matched == ["crash"]
 
 
 def test_unknown_word_has_no_synonyms_but_is_kept():
@@ -45,19 +52,19 @@ def test_ranking_prefers_originals_coverage_and_comment_evidence():
     cs = expand.build_concepts("crash laptop")
     posts = {
         "a": {"id": "a", "title": "crash in my browser", "selftext": "", "num_comments": 0},
-        "b": {"id": "b", "title": "How do i fix this line on my laptop ?", "selftext": "", "num_comments": 3},
+        "b": {"id": "b", "title": "How do i fix this wreck on my laptop ?", "selftext": "", "num_comments": 3},
         "c": {"id": "c", "title": "unrelated keyboard question", "selftext": "", "num_comments": 9},
     }
     ranked = expand.rank_posts(cs, posts, {})
     assert [p["id"] for _, _, p in ranked] == ["b", "a"]  # covers both concepts; c has no match
-    assert ranked[0][1] == ["line", "laptop"]
+    assert ranked[0][1] == ["wreck", "laptop"]
     # comment evidence lifts a weaker thread
     cs1 = expand.build_concepts("crash")
-    posts = {"a": {"id": "a", "title": "crash here", "selftext": "", "num_comments": 1},
-             "b": {"id": "b", "title": "my line problem", "selftext": "", "num_comments": 1}}
+    posts = {"a": {"id": "a", "title": "crash here", "selftext": "", "num_comments": 0},
+             "b": {"id": "b", "title": "my wreck problem", "selftext": "", "num_comments": 1}}
     base = expand.rank_posts(cs1, posts, {})
     assert base[0][2]["id"] == "a"
-    boosted = expand.rank_posts(cs1, posts, {"b": ["set the driver line normal to 0, the crash goes away", "fold"]})
+    boosted = expand.rank_posts(cs1, posts, {"b": ["set the driver wreck normal to 0, the crash goes away", "fold", "seam", "furrow"]})
     assert boosted[0][2]["id"] == "b"
 
 
@@ -73,15 +80,15 @@ def _fake_api(rows_by_query, calls):
 
 
 def test_search_posts_finds_synonym_only_thread_and_respects_budget(monkeypatch):
-    target = {"id": "t1", "title": "How do i fix this line on my laptop ?", "selftext": "", "num_comments": 4,
+    target = {"id": "t1", "title": "How do i fix this wreck on my laptop ?", "selftext": "", "num_comments": 4,
               "created_utc": 1717683184, "score": 5}
     other = {"id": "o1", "title": "tips for laptop patterns", "selftext": "", "num_comments": 1,
              "created_utc": 1717683184, "score": 1}
     calls = []
-    monkeypatch.setattr(core, "api_get", _fake_api({"laptop": [other], "line laptop": [target]}, calls))
+    monkeypatch.setattr(core, "api_get", _fake_api({"laptop": [other], "wreck laptop": [target]}, calls))
     out = core.search_posts("learnpython", "crash laptop", limit=5)
     assert out.index("[t1]") < out.index("[o1]")
-    assert "matched: line, laptop" in out
+    assert "matched: wreck, laptop" in out
     assert len(calls) <= core.MAX_REQUESTS
 
 

@@ -5,7 +5,9 @@ Dev-time only (stdlib, no nltk needed). Usage:
 The NLTK 'wordnet' corpus zip contains exactly this directory.
 
 For each single-word lemma we keep up to MAX_SYNS single-word synonyms drawn from its first MAX_SENSES
-senses (WordNet orders senses by frequency; rarer senses are skipped). Synonyms are ordered by how common
+senses (WordNet orders senses by frequency; rarer senses are skipped). A synonym is kept only if the shared
+sense is also among ITS OWN first MAX_SYN_RANK senses and the word has a tagged-sense count > 0 (it is in real
+use), which drops side meanings like lag -> jail. Synonyms are ordered by how common
 the word is overall (WordNet's tagged-sense counts), so everyday words come before Latinate rarities.
 """
 import gzip
@@ -14,7 +16,8 @@ import re
 import sys
 from pathlib import Path
 
-MAX_SENSES = 3
+MAX_SENSES = 3      # senses of the query word we draw synonyms from
+MAX_SYN_RANK = 3    # the shared sense must be within the synonym's own first N senses (else it is a side meaning)
 MAX_SYNS = 8
 POS = ("noun", "verb", "adj", "adv")
 WORD = re.compile(r"^[a-z]{3,}$")
@@ -48,6 +51,13 @@ def main(d: str, out: str) -> None:
     table: dict[str, list[str]] = {}
     for pos in POS:
         syn = load_synsets(d, pos)
+        rank: dict[tuple[str, str], int] = {}  # (lemma, synset offset) -> sense rank within that lemma
+        for line in (d / f"index.{pos}").read_text(encoding="utf-8").splitlines():
+            if line.startswith("  "):
+                continue
+            q = line.split(" ")
+            for i, off in enumerate(q[6 + int(q[3]):]):
+                rank[(q[0], off)] = i
         for line in (d / f"index.{pos}").read_text(encoding="utf-8").splitlines():
             if line.startswith("  "):
                 continue
@@ -60,7 +70,8 @@ def main(d: str, out: str) -> None:
             found = table.setdefault(lemma, [])
             for off in offsets:
                 for w in syn.get(off, []):
-                    if w != lemma and WORD.match(w) and w not in found:
+                    if (w != lemma and WORD.match(w) and w not in found and common.get(w, 0) > 0
+                            and rank.get((w, off), 99) < MAX_SYN_RANK):
                         found.append(w)
     table = {k: sorted(v, key=lambda w: -common.get(w, 0))[:MAX_SYNS] for k, v in table.items() if v}
     with gzip.open(out, "wt", encoding="utf-8", compresslevel=9) as f:
