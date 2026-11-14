@@ -12,6 +12,8 @@ def _run(fn, *a, **k) -> str:
         return fn(*a, **k)
     except core.RedditSearchError as e:
         return f"ERROR: {e}"
+    except Exception as e:  # never leak a traceback to the agent
+        return f"ERROR: unexpected {type(e).__name__}: {e}. Retry, or report this if it persists."
 
 
 @mcp.tool()

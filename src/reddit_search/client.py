@@ -62,10 +62,16 @@ class ApiClient:
         self._http = http
         self.base = base
         if min_gap is None:
-            min_gap = float(os.environ.get("REDDIT_SEARCH_MIN_GAP", DEFAULT_MIN_GAP))
+            try:
+                min_gap = float(os.environ.get("REDDIT_SEARCH_MIN_GAP", DEFAULT_MIN_GAP))
+            except ValueError:
+                min_gap = DEFAULT_MIN_GAP
         self.min_gap = max(0.0, min_gap)
         if cache_dir is True:
-            cache_dir = None if os.environ.get("REDDIT_SEARCH_NO_CACHE") else default_cache_dir()
+            try:
+                cache_dir = None if os.environ.get("REDDIT_SEARCH_NO_CACHE") else default_cache_dir()
+            except (RuntimeError, KeyError, OSError):  # no resolvable home: run without a cache
+                cache_dir = None
         self.cache_dir = cache_dir or None
         self._sem = threading.Semaphore(MAX_INFLIGHT)
         self._lock = threading.Lock()
