@@ -1,61 +1,21 @@
-"""Shared core: API client and compact text formatting."""
+"""Shared core: tool implementations and compact text formatting."""
 from __future__ import annotations
 
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
-import httpx
+from . import client as _client
+from . import expand
+from .client import RedditSearchError
 
-BASE = "https://arctic-shift.photon-reddit.com/api"
-HEADERS = {"User-Agent": "reddit-search-mcp/0.1 (agent research tool)"}
-RETRY_STATUS = {429, 500, 502, 503, 504}
-
-
-class RedditSearchError(Exception):
-    """Error with a message written for the calling agent."""
+CALL_DEADLINE = 40.0  # seconds; no new request or retry cooldown is started past this
+MAX_REQUESTS = 8      # network requests per search call, comment search and id lookup included
 
 
-def api_get(path: str, params: dict, retries: int = 4, client: httpx.Client | None = None) -> list | dict:
-    params = {k: v for k, v in params.items() if v is not None and v != ""}
-    own = client is None
-    client = client or httpx.Client(timeout=45, headers=HEADERS)
-    last = "unknown error"
-    try:
-        for attempt in range(retries + 1):
-            wait = 2.0 * (2**attempt)
-            try:
-                r = client.get(BASE + path, params=params)
-            except httpx.TransportError as e:
-                last = f"network error: {type(e).__name__}"
-            else:
-                body = None
-                try:
-                    body = r.json()
-                except ValueError:
-                    pass
-                err = body.get("error") if isinstance(body, dict) else None
-                if r.status_code == 200 and not err:
-                    return body["data"] if isinstance(body, dict) and "data" in body else body
-                last = f"HTTP {r.status_code}: {err or r.text[:120]}"
-                timeout = bool(err and "imeout" in err)
-                if r.status_code == 429:
-                    try:
-                        wait = max(wait, float(r.headers.get("Retry-After", 0)))
-                    except ValueError:
-                        pass
-                elif r.status_code not in RETRY_STATUS and not timeout:
-                    raise RedditSearchError(f"Arctic Shift rejected the request ({last}).")
-            if attempt < retries:
-                time.sleep(min(wait, 30))
-    finally:
-        if own:
-            client.close()
-    raise RedditSearchError(
-        f"Arctic Shift unavailable after {retries + 1} tries ({last}). It is a free single-maintainer "
-        "service. Busy subreddits time out on keyword search: retry later, narrow with after/before, "
-        "or use a more specific query."
-    )
+def api_get(path: str, params: dict, retries: int = 2, deadline: float | None = None) -> list | dict:
+    return _client.default_client().get(path, params, retries=retries, deadline=deadline)
 
 
 # ---------- helpers ----------
@@ -118,21 +78,94 @@ def find_subreddits(prefix: str, limit: int = 15) -> str:
     return "\n".join(out)
 
 
+def _fanout(jobs, deadline_at: float):
+    """Run (path, params, retries) jobs, 2 at a time, in priority order. Returns [(rows|None, err|None)].
+    Jobs not started before the deadline are skipped (None, None)."""
+    results = []
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        for i in range(0, len(jobs), 2):
+            batch = jobs[i:i + 2]
+            if i and time.monotonic() > deadline_at:
+                results += [(None, None)] * len(batch)
+                continue
+            futs = [ex.submit(api_get, *j, deadline_at) for j in batch]
+            for f in futs:
+                try:
+                    results.append((f.result(), None))
+                except RedditSearchError as e:
+                    results.append((None, e))
+    return results
+
+
+POST_FIELDS = "id,title,created_utc,score,num_comments,selftext,author"
+
+
 def search_posts(subreddit: str, query: str, limit: int = 25, after: str | None = None,
                  before: str | None = None, sort: str = "desc") -> str:
     sub = clean_sub(subreddit)
-    rows = api_get("/posts/search", {
-        "subreddit": sub, "query": query, "limit": min(max(limit, 1), 100),
-        "after": parse_time(after), "before": parse_time(before), "sort": sort,
-        "fields": "id,title,created_utc,score,num_comments,selftext,author",
-    })
-    if not rows:
-        return (f"No posts in r/{sub} matching {query!r}. Try different words (lay terms, synonyms, "
-                "fewer words) or check the subreddit name with find_subreddits.")
-    out = [f"{len(rows)} posts in r/{sub} for {query!r} (sorted by date {sort}; scores of posts <36h old are unreliable):"]
-    for r in rows:
+    limit = min(max(limit, 1), 100)
+    per = max(limit, 50)
+    concepts = expand.build_concepts(query) or [expand.Concept(w) for w in expand.tokens(query)[:2]]
+    if not concepts:
+        raise RedditSearchError("Empty query: give at least one keyword.")
+    deadline_at = time.monotonic() + CALL_DEADLINE
+    common = {"subreddit": sub, "after": parse_time(after), "before": parse_time(before), "sort": sort}
+    plan = expand.plan_post_queries(concepts, min(MAX_REQUESTS - 2, 6))
+    post_jobs = [("/posts/search", {**common, "query": q, "limit": per, "fields": POST_FIELDS}, 2 if i == 0 else 1)
+                 for i, q in enumerate(plan)]
+    comment_job = ("/comments/search", {**common, "body": expand.comment_or_query(concepts), "limit": 100,
+                                        "fields": "id,body,link_id"}, 1)
+    posts: dict[str, dict] = {}
+    errors, ok = [], 0
+
+    def take(results, n_post):
+        nonlocal ok
+        for k, (rows, err) in enumerate(results):
+            if err:
+                errors.append(err)
+            elif rows is not None:
+                ok += 1
+                if k < n_post:
+                    for r in rows:
+                        posts.setdefault(r["id"], r)
+        return results
+
+    # Strong exact result: the AND of every query word already fills the page, so skip the expansion.
+    first = take(_fanout(post_jobs[:2], deadline_at), min(2, len(post_jobs)))
+    strong = len(concepts) > 1 and first and first[0][0] is not None and len(first[0][0]) >= limit
+    comment_rows: list[dict] = []
+    if not strong:
+        rest = post_jobs[2:]
+        res = take(_fanout(rest + [comment_job], deadline_at), len(rest))
+        if res and res[-1][0]:
+            comment_rows = res[-1][0]
+    if not ok:
+        raise errors[0] if errors else RedditSearchError("No response from Arctic Shift.")
+
+    by_post: dict[str, list[str]] = {}
+    for c in comment_rows:
+        pid = (c.get("link_id") or "").removeprefix("t3_")
+        if pid:
+            by_post.setdefault(pid, []).append(c.get("body") or "")
+    extra = sorted((pid for pid in by_post if pid not in posts), key=lambda p: -len(by_post[p]))[:10]
+    if extra and time.monotonic() < deadline_at + 10:
+        try:
+            for r in api_get("/posts/ids", {"ids": ",".join(extra), "fields": POST_FIELDS}, 1, deadline_at + 10) or []:
+                posts.setdefault(r["id"], r)
+        except RedditSearchError as e:
+            errors.append(e)
+
+    ranked = expand.rank_posts(concepts, posts, by_post)[:limit]
+    if not ranked:
+        return (f"No posts in r/{sub} matching {query!r} (also tried synonyms). Check the subreddit name "
+                "with find_subreddits, or try the plainest nouns for the topic.")
+    searched = ", ".join(plan)
+    note = f" ({len(errors)} lookup(s) failed or were skipped: results may be incomplete)" if errors else ""
+    out = [f"{len(ranked)} posts in r/{sub} for {query!r}, best match first{note}. Searched variants: {searched}"
+           + (" + comments" if comment_rows else "") + ". Scores of posts <36h old are unreliable."]
+    for s, matched, r in ranked:
         out.append(f"[{r['id']}] {r.get('title', '')} | {date(r.get('created_utc'))} | "
-                   f"score {r.get('score')} | {r.get('num_comments')} comments\n"
+                   f"score {r.get('score')} | {r.get('num_comments')} comments | matched: {', '.join(matched) or 'comments'}\n"
                    f"  {permalink(sub, r['id'])}")
         body = snippet(r.get("selftext"), 200)
         if body:
@@ -143,18 +176,45 @@ def search_posts(subreddit: str, query: str, limit: int = 25, after: str | None 
 def search_comments(subreddit: str, query: str, limit: int = 25, after: str | None = None,
                     before: str | None = None, sort: str = "desc") -> str:
     sub = clean_sub(subreddit)
-    rows = api_get("/comments/search", {
-        "subreddit": sub, "body": query, "limit": min(max(limit, 1), 100),
-        "after": parse_time(after), "before": parse_time(before), "sort": sort,
-        "fields": "id,body,link_id,score,created_utc,author",
-    })
-    if not rows:
-        return f"No comments in r/{sub} matching {query!r}. Try other words or search_posts."
-    out = [f"{len(rows)} comments in r/{sub} for {query!r}:"]
-    for r in rows:
+    limit = min(max(limit, 1), 100)
+    per = max(limit, 50)
+    concepts = expand.build_concepts(query) or [expand.Concept(w) for w in expand.tokens(query)[:2]]
+    if not concepts:
+        raise RedditSearchError("Empty query: give at least one keyword.")
+    common = {"subreddit": sub, "after": parse_time(after), "before": parse_time(before), "sort": sort,
+              "limit": per, "fields": "id,body,link_id,score,created_utc,author"}
+    jobs = []
+    if len(concepts) > 1:
+        jobs.append(("/comments/search", {**common, "body": " ".join(c.word for c in concepts)}, 2))
+    jobs.append(("/comments/search", {**common, "body": expand.comment_or_query(concepts)}, 1))
+    rows: dict[str, dict] = {}
+    errors, ok = [], 0
+    for i, job in enumerate(jobs):
+        (res, err), = _fanout([job], time.monotonic() + CALL_DEADLINE)
+        if err:
+            errors.append(err)
+            continue
+        ok += 1
+        for r in res or []:
+            rows.setdefault(r["id"], r)
+        if i == 0 and len(jobs) > 1 and len(rows) >= limit:
+            break  # exact AND match already fills the page
+    if not ok:
+        raise errors[0]
+    ranked = []
+    for r in rows.values():
+        s, matched = expand.score_text(concepts, r.get("body") or "")
+        ranked.append((s, matched, r))
+    ranked.sort(key=lambda x: (-x[0], -(x[2].get("created_utc") or 0)))
+    ranked = ranked[:limit]
+    if not ranked:
+        return f"No comments in r/{sub} matching {query!r} (also tried synonyms). Try other words or search_posts."
+    note = f" ({len(errors)} lookup(s) failed: results may be incomplete)" if errors else ""
+    out = [f"{len(ranked)} comments in r/{sub} for {query!r}, best match first{note}:"]
+    for s, matched, r in ranked:
         pid = (r.get("link_id") or "").removeprefix("t3_")
-        out.append(f"[{r['id']}] {date(r.get('created_utc'))} | score {r.get('score')} | "
-                   f"post {pid} {permalink(sub, pid)}\n  {snippet(r.get('body'), 300)}")
+        out.append(f"[{r['id']}] {date(r.get('created_utc'))} | score {r.get('score')} | matched: "
+                   f"{', '.join(matched) or '?'} | post {pid} {permalink(sub, pid)}\n  {snippet(r.get('body'), 300)}")
     out.append("Use get_thread with a post id to read the whole discussion.")
     return "\n".join(out)
 

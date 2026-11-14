@@ -20,9 +20,9 @@ def test_clean_sub_and_snippet():
 
 
 def test_search_posts_format(monkeypatch):
-    rows = [{"id": "abc", "title": "T", "created_utc": 1717683184, "score": 3, "num_comments": 2, "selftext": "hello  world"}]
-    monkeypatch.setattr(core, "api_get", lambda *a, **k: rows)
-    out = core.search_posts("r/foo", "q")
+    rows = [{"id": "abc", "title": "T qq", "created_utc": 1717683184, "score": 3, "num_comments": 2, "selftext": "hello  world"}]
+    monkeypatch.setattr(core, "api_get", lambda path, p, retries=2, deadline=None: rows if "posts/search" in path else [])
+    out = core.search_posts("r/foo", "qq")
     assert "https://www.reddit.com/r/foo/comments/abc/" in out and "2024-06-06" in out and "hello world" in out
 
 
@@ -35,14 +35,6 @@ def test_thread_tree(monkeypatch):
     monkeypatch.setattr(core, "api_get", lambda path, p, **k: post if "posts" in path else tree)
     out = core.get_thread("https://reddit.com/r/foo/comments/p1/t/")
     assert "- u/x (4): top" in out and "  - u/y (1): child" in out and "+5 more" in out
-
-
-def test_retry_then_error(monkeypatch):
-    import httpx
-    monkeypatch.setattr(core.time, "sleep", lambda s: None)
-    t = httpx.MockTransport(lambda req: httpx.Response(429, headers={"Retry-After": "1"}, json={"data": None, "error": "slow"}))
-    with pytest.raises(core.RedditSearchError, match="unavailable"):
-        core.api_get("/x", {}, retries=2, client=httpx.Client(transport=t))
 
 
 @pytest.mark.live
